@@ -16,7 +16,7 @@ from .mv_t_low_rank import MultivariateStudentTInverseLowRank
 from .normal import Normal, NormalMeanVariance
 from .reversegumbel import ReverseGumbel
 from .studentt import T
-from .bicop_normal import BiCopNormal
+from .bicop_normal import BivariateCopulaNormal
 from .mv_marg_cop import MarginalCopula
 
 __all__ = [
@@ -39,6 +39,6 @@ __all__ = [
     "MultivariateNormalInverseLowRank",
     "MultivariateStudentTInverseCholesky",
     "MultivariateStudentTInverseLowRank",
-    "BiCopNormal",
+    "BivariateCopulaNormal",
     "MarginalCopula",
 ]
