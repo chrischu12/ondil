@@ -8,7 +8,7 @@ from .softpluslinks import (
     InverseSoftPlusShiftValue,
 )
 from .sqrtlinks import Sqrt, SqrtShiftTwo, SqrtShiftValue
-from .copulalinks import FisherZLink, KendallsTauToParameter
+from .copulalinks import FisherZLink, KendallsTauToParameter,KendallsTauToParameterClayton
 
 
 __all__ = [
@@ -29,4 +29,5 @@ __all__ = [
     "MatrixDiagTril",
     "FisherZLink",
     "KendallsTauToParameter",
+    "KendallsTauToParameterClayton"
 ]

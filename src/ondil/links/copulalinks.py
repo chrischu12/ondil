@@ -86,3 +86,39 @@ class KendallsTauToParameter(LinkFunction):
     def inverse_derivative(self, x: np.ndarray) -> np.ndarray:
         # Derivative of (2/pi) * arcsin(x) w.r.t x
         return (2 / np.pi) / np.sqrt(1 - x ** 2)
+    
+    
+class KendallsTauToParameterClayton(LinkFunction):
+    """
+    Link function mapping Kendall's tau to the Clayton copula parameter theta.
+
+    The relationship is:
+        theta = 2 * tau / (1 - tau)
+    The inverse is:
+        tau = theta / (theta + 2)
+    """
+    # The tau parameter is in (0, 1), theta in (0, ∞)
+    link_support = (np.nextafter(0, 1), np.nextafter(1, 0))
+
+    def __init__(self):
+        pass
+
+    def link(self, tau: np.ndarray) -> np.ndarray:
+        # Map tau to theta
+        return 2 * tau / (1 - tau)
+
+    def inverse(self, theta: np.ndarray) -> np.ndarray:
+        # Map theta to tau
+        return theta / (theta + 2)
+
+    def link_derivative(self, tau: np.ndarray) -> np.ndarray:
+        # Derivative of theta = 2 * tau / (1 - tau) w.r.t tau
+        return 2 / (1 - tau) ** 2
+
+    def link_second_derivative(self, tau: np.ndarray) -> np.ndarray:
+        # Second derivative w.r.t tau
+        return 4 / (1 - tau) ** 3
+
+    def inverse_derivative(self, theta: np.ndarray) -> np.ndarray:
+        # Derivative of tau = theta / (theta + 2) w.r.t theta
+        return 2 / (theta + 2) ** 2
