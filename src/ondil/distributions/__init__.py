@@ -25,13 +25,13 @@ from .bicop_gumbel import BivariateCopulaGumbel
 from .mv_marg_cop import MarginalCopula
 from .bicop_clayton import BivariateCopulaClayton
 
-
 __all__ = [
-       "Normal",
+    "Normal",
     "NormalMeanVariance",
     "StudentT",
     "JSU",
     "BetaInflated",
+    "BetaInflatedZero",
     "Gamma",
     "Beta",
     "LogNormal",
@@ -48,10 +48,9 @@ __all__ = [
     "MultivariateStudentTInverseCholesky",
     "MultivariateStudentTInverseLowRank",
     "MultivariateStudentTInverseModifiedCholesky",
-    "BetaInflatedZero",
     "ZeroAdjustedGamma",
     "BivariateCopulaNormal",
     "BivariateCopulaGumbel",
     "MarginalCopula",
-    "BivariateCopulaClayton"
+    "BivariateCopulaClayton",
 ]
