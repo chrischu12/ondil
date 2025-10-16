@@ -24,6 +24,7 @@ from .bicop_normal import BivariateCopulaNormal
 from .bicop_gumbel import BivariateCopulaGumbel
 from .mv_marg_cop import MarginalCopula
 from .bicop_clayton import BivariateCopulaClayton
+from .bicop_studentt import BivariateCopulaStudentT
 
 __all__ = [
     "Normal",
@@ -53,4 +54,5 @@ __all__ = [
     "BivariateCopulaGumbel",
     "MarginalCopula",
     "BivariateCopulaClayton",
+    "BivariateCopulaStudentT",
 ]
