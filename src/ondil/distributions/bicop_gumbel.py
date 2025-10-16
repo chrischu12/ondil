@@ -19,13 +19,14 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution):
     distribution_support = (0, 1) 
     n_params = len(parameter_names)
     parameter_shape = {
-        0: ParameterShapes.SCALAR,
-    }
+        0: ParameterShapes.SCALAR}
+    
+
     def __init__(
         self,
         link: LinkFunction = Log(),
         param_link: LinkFunction = KendallsTauToParameterGumbel(),
-        family_code: int = 401
+        family_code: int = 401,
     ):
         super().__init__(
             links={0: link},
@@ -39,51 +40,37 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution):
         self._regularization = ""
         self._scoring = "fisher"
 
-
     @staticmethod
     def fitted_elements(dim: int):
         return {0: int(dim * (dim - 1) // 2)}
 
-    def get_effective_rotation(self, theta_value):
+    def get_effective_rotation(theta_values: np.ndarray, family_code: int) -> np.ndarray:
         """
-        Get the effective rotation based on family code and parameter sign.
-        This mimics the gamCopula logic from getFams() and bicoppd1d2().
+        Vectorized version of get_effective_rotation().
+        Accepts an array of theta_values and returns corresponding rotations.
         
         Args:
-            theta_value: The copula parameter value (theta >= 1 for Gumbel)
-            
+            theta_values (np.ndarray): Copula parameter values (any shape)
+            family_code (int): Family code (401–404)
+        
         Returns:
-            int: The effective rotation (0, 1, 2, 3)
+            np.ndarray: Effective rotations (same shape as theta_values)
         """
-        # Map gamCopula family codes to VineCopula rotations for Gumbel
-        # Gumbel family codes: 401, 402, 403, 404
-        if self.family_code == 401:
-            # Double Gumbel type I (standard and rotated 90 degrees)
-            if theta_value >= 1:
-                return 0  # Standard Gumbel (4)
-            else:
-                return 2  # 90° rotation (24)
-        elif self.family_code == 402:
-            # Double Gumbel type II (standard and rotated 270 degrees)
-            if theta_value >= 1:
-                return 0  # Standard Gumbel (4)
-            else:
-                return 3  # 270° rotation (34)
-        elif self.family_code == 403:
-            # Double Gumbel type III (survival and rotated 90 degrees)
-            if theta_value >= 1:
-                return 1  # 180° rotation (14) - survival
-            else:
-                return 2  # 90° rotation (24)
-        elif self.family_code == 404:
-            # Double Gumbel type IV (survival and rotated 270 degrees)
-            if theta_value >= 1:
-                return 1  # 180° rotation (14) - survival
-            else:
-                return 3  # 270° rotation (34)
+        theta_values = np.asarray(theta_values)
+        rot = np.empty_like(theta_values, dtype=int)
+
+        if family_code == 401:
+            rot[:] = np.where(theta_values >= 1, 0, 2)
+        elif family_code == 402:
+            rot[:] = np.where(theta_values >= 1, 0, 3)
+        elif family_code == 403:
+            rot[:] = np.where(theta_values >= 1, 1, 2)
+        elif family_code == 404:
+            rot[:] = np.where(theta_values >= 1, 1, 3)
         else:
-            # Default to 401 behavior if invalid family code
-            return 0 if theta_value >= 1 else 2
+            raise ValueError(f"Unsupported family code: {family_code}. Supported codes: 401, 402, 403, 404.")
+
+        return rot
 
     @property
     def param_structure(self):
@@ -112,12 +99,8 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution):
 
     
     def theta_to_params(self, theta):
-        if len(theta) > 1:
-            theta_param = theta
-        else:
-            theta_param = theta[0]
-
-        return theta_param
+        chol = theta[0].copy()
+        return chol
     
     def theta_to_scipy_params(self, theta: np.ndarray) -> dict:
         """Map GAMLSS Parameters to scipy parameters.
@@ -303,7 +286,7 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution):
     ) -> Dict[int, np.ndarray]:
         raise NotImplementedError("Not implemented")
 
-    def hfunc(self, u: np.ndarray, v: np.ndarray, theta: np.ndarray, un: int) -> np.ndarray:
+    def hfunc(self, u: np.ndarray, v: np.ndarray, theta: np.ndarray, un: int, family_code: int) -> np.ndarray:
         """
         Conditional distribution function h(u|v) for the bivariate Gumbel copula.
         Implementation based on vinecopulib package.
@@ -317,42 +300,51 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution):
         Returns:
             np.ndarray: Array of shape (n,) with conditional probabilities.
         """
-        M = u.shape[0]
+
         UMIN = 1e-12
         UMAX = 1 - 1e-12
 
-        u = np.clip(u, UMIN, UMAX)
-        v = np.clip(v, UMIN, UMAX)
+        theta = np.asarray(theta).copy()      # <- prevents in-place mutation of caller's array
+
+        u = np.clip(u, UMIN, UMAX).reshape(-1, 1)
+        v = np.clip(v, UMIN, UMAX).reshape(-1, 1)
 
         # Swap u and v if un == 1
         if un == 1:
             u, v = v, u
 
-        h = np.empty(M)
+        # Get rotations for all samples
+        rotation = get_effective_rotation(theta, family_code)
         
-        for m in range(M):
-            theta_m = theta[0][m] if hasattr(theta[0], '__len__') else theta[0]
-            
-            # Gumbel copula h-function
-            if theta_m == 1:
-                h[m] = u[m]
-            else:
-                log_u = np.log(u[m])
-                log_v = np.log(v[m])
-                
-                t1 = (-log_u) ** theta_m
-                t2 = (-log_v) ** theta_m
-                sum_t = t1 + t2
-                
-                if sum_t > 0 and log_v != 0:
-                    copula_val = np.exp(-sum_t ** (1.0 / theta_m))
-                    h[m] = -(copula_val * (sum_t ** (1.0/theta_m - 1.0)) * t2) / (v[m] * log_v)
-                else:
-                    h[m] = 0
+        # Apply rotation transformations vectorized
+        u_rot, v_rot = u.copy(), v.copy()
+        
+        # 180° rotation (survival)
+        mask_1 = (rotation == 1)
+        u_rot[mask_1] = 1 - u[mask_1]
+        v_rot[mask_1] = 1 - v[mask_1]
+        
+        # 90° rotation
+        mask_2 = (rotation == 2)
+        v_rot[mask_2] = 1 - v[mask_2]
+        theta[mask_2] = -theta[mask_2]
+        
+        # 270° rotation
+        mask_3 = (rotation == 3)
+        v_rot[mask_3] = 1 - v[mask_3]
+        theta[mask_3] = -theta[mask_3]
 
-        # Clip output for numerical stability
-        h = np.clip(h, UMIN, UMAX)
-        return h
+        log_u = np.log(u_rot)
+        log_v = np.log(v_rot)
+
+        t1 = (-log_u) ** theta
+        t2 = (-log_v) ** theta
+        sum_t = t1 + t2
+
+        copula_val = np.exp(-sum_t ** (1.0 / theta))
+        h = -(copula_val * (sum_t ** (1.0/theta - 1.0)) * t2) / (v_rot * log_v)
+
+        return h.squeeze()
 
     def hinv(self, u: np.ndarray, v: np.ndarray, theta: np.ndarray, un: int) -> np.ndarray:
         """
@@ -407,194 +399,260 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution):
 ##########################################################
 ### Functions for the derivatives and log-likelihood ####
 ##########################################################
+def get_effective_rotation(theta_values: np.ndarray, family_code: int) -> np.ndarray:
+    """
+    Vectorized version of get_effective_rotation().
+    Accepts an array of theta_values and returns corresponding rotations.
+    
+    Args:
+        theta_values (np.ndarray): Copula parameter values (any shape)
+        family_code (int): Family code (401–404)
+    
+    Returns:
+        np.ndarray: Effective rotations (same shape as theta_values)
+    """
 
+    theta_values = np.asarray(theta_values)
+
+    rot = np.empty_like(theta_values, dtype=int)
+
+    if family_code == 401:
+        rot[:] = np.where(theta_values >= 0, 0, 2)
+    elif family_code == 402:
+        rot[:] = np.where(theta_values >= 0, 0, 3)
+    elif family_code == 403:
+        rot[:] = np.where(theta_values >= 0, 1, 2)
+    elif family_code == 404:
+        rot[:] = np.where(theta_values >= 0, 1, 3)
+    else:
+        raise ValueError(f"Unsupported family code: {family_code}. Supported codes: 401, 402, 403, 404.")
+
+    return rot
 
 def _log_likelihood(y, theta, family_code=401):
     """
     Log-likelihood for the Gumbel copula.
     """
-    M = y.shape[0]
-    f = np.empty(M)
+
+    theta = np.asarray(theta).copy()      # <- prevents in-place mutation of caller's array
     UMIN = 1e-12
     UMAX = 1 - 1e-12
-    y_clipped = np.clip(y, UMIN, UMAX)
 
-    for m in range(M):
-        if M == 1:
-            theta_m = theta
-        else: 
-            theta_m = theta[m]
-            
-        u = y_clipped[m, 0]
-        v = y_clipped[m, 1]
+    y = np.clip(y, UMIN, UMAX)
+    u = y[:, 0].reshape(-1, 1)       
+    v = y[:, 1].reshape(-1, 1)
+
+    rotation = get_effective_rotation(theta, family_code)
+
+    u_rot, v_rot = u.copy(), v.copy()
+    
+    # 180° rotation (survival)
+    mask_1 = (rotation == 1)
+    u_rot[mask_1] = 1 - u[mask_1]
+    v_rot[mask_1] = 1 - v[mask_1]
+    
+    # 90° rotation
+    mask_2 = (rotation == 2)
+    u_rot[mask_2] = 1 - u[mask_2]
+    theta[mask_2] = -theta[mask_2]
+    
+    # 270° rotation
+    mask_3 = (rotation == 3)
+    v_rot[mask_3] = 1 - v[mask_3]
+    theta[mask_3] = -theta[mask_3]
         
-        # Gumbel copula log-likelihood following C implementation
-        log_u = np.log(u)
-        log_v = np.log(v)
+    # Gumbel copula log-likelihood following C implementation
+    log_u = np.log(u_rot)
+    log_v = np.log(v_rot)
 
-        t1 = (-log_u) ** theta_m + (-log_v) ** theta_m
-        
-        if t1 > 0 and log_u * log_v > 0:
-            f[m] = (-t1 ** (1.0 / theta_m) + 
-                (2.0 / theta_m - 2.0) * np.log(t1) + 
-                (theta_m - 1.0) * np.log(log_u * log_v) - 
-                np.log(u * v) + 
-                np.log1p((theta_m - 1.0) * t1 ** (-1.0 / theta_m)))
-            
-            # Handle numerical limits
-            XINFMAX = 700.0  # Approximate maximum for exp
-            if f[m] > XINFMAX:
-                f[m] = np.log(XINFMAX)
-            elif f[m] < np.log(np.finfo(float).tiny):
-                f[m] = np.log(np.finfo(float).tiny)
-        else:
-            f[m] = np.log(np.finfo(float).tiny)
+    t1 = (-log_u) ** theta + (-log_v) ** theta
 
-        # Clip output for numerical stability
-    f = np.clip(f, UMIN, UMAX)
-    return f
+    f = (-t1 ** (1.0 / theta) + 
+         (2.0 / theta - 2.0) * np.log(np.maximum(t1, UMIN)) + 
+         (theta - 1.0) * np.log(np.maximum(np.abs(log_u * log_v), UMIN)) - 
+         np.log(np.maximum(u_rot * v_rot, UMIN)) + 
+         np.log1p(np.maximum((theta - 1.0) * t1 ** (-1.0 / theta), -1 + UMIN)))
+    
+    # Handle numerical limits
+    XINFMAX = 700.0  # Approximate maximum for exp
+    mask_high = (f > XINFMAX)
+    mask_low = (f < np.log(np.finfo(float).tiny))
+    
+    f[mask_high] = np.log(XINFMAX)
+    f[mask_low] = np.log(np.finfo(float).tiny)
+
+    f = np.where(f == 0, 1e-2, f)
+    return f.squeeze()
+
 
 def _derivative_1st(y, theta, family_code=401):
     """
     First derivative of the Gumbel copula log-likelihood with respect to theta.
     """
-    M = y.shape[0]
-    deriv = np.empty(M, dtype=np.float64)
-    eps = np.finfo(float).eps
-    y = np.clip(y, eps, 1 - eps)
-    
-    for m in range(M):
-        if M == 1:
-            theta_m = theta
-        else:
-            theta_m = theta[m]
-        
-        u = y[m, 0]
-        v = y[m, 1]
 
-        t1 = np.log(u)
-        t2 = np.power(-t1, theta_m)
-        t3 = np.log(v)
-        t4 = np.power(-t3, theta_m)
-        t5 = t2 + t4
-        t6 = 1.0 / theta_m
-        t7 = np.power(t5, t6)
-        t8 = theta_m * theta_m
-        t10 = np.log(t5)
-        t11 = (1.0 / t8) * t10
-        t12 = np.log(-t1)
-        t14 = np.log(-t3)
-        t16 = t2 * t12 + t4 * t14
-        t18 = 1.0 / t5
-        t20 = -t11 + t6 * t16 * t18
-        t22 = np.exp(-t7)
-        t23 = -1.0 + t6
-        t24 = np.power(t5, 2.0 * t23)
-        t25 = t22 * t24
-        t27 = t1 * t3
-        t28 = theta_m - 1.0
-        t29 = np.power(t27, t28)
-        t30 = np.power(t5, -t6)
-        t31 = t28 * t30
-        t32 = 1.0 + t31
-        t34 = 1.0 / u
-        t35 = 1.0 / v
-        t36 = t34 * t35
-        t37 = t29 * t32 * t36
-        t45 = t25 * t29
-        t46 = np.log(t27)
+    theta = np.asarray(theta).copy()      # <- prevents in-place mutation of caller's array
+    sign = np.ones_like(theta)
+
+    y = y.copy()
+
+    u = np.clip(y[:, 0], 1e-12, 1 - 1e-12).reshape(-1, 1)
+    v = np.clip(y[:, 1], 1e-12, 1 - 1e-12).reshape(-1, 1)
+
+    rotation = get_effective_rotation(theta, family_code)
+    
+    u_rot, v_rot = u.copy(), v.copy()
+    
+    # 180° rotation (survival)
+    mask_1 = (rotation == 1)
+    u_rot[mask_1] = 1 - u[mask_1]
+    v_rot[mask_1] = 1 - v[mask_1]
+    sign[mask_1] = 1.0
+
+    mask_2 = (rotation == 2)
+    u_rot[mask_2] = 1 - u[mask_2]
+    theta[mask_2] = -theta[mask_2]
+    sign[mask_2] = -1.0
+
+    mask_3 = (rotation == 3)
+    v_rot[mask_3] = 1 - v[mask_3]
+    theta[mask_3] = -theta[mask_3]
+    sign[mask_3] = -1.0
+
+    t1 = np.log(u_rot)
+    t2 = np.power(-t1, theta)
+    t3 = np.log(v_rot)
+    t4 = np.power(-t3, theta)
+    t5 = t2 + t4
+    t6 = 1.0 / theta
+    t7 = np.power(t5, t6)
+    t8 = theta * theta
+    t10 = np.log(t5)
+    t11 = (1.0 / t8) * t10
+    t12 = np.log(-t1)
+    t14 = np.log(-t3)
+    t16 = t2 * t12 + t4 * t14
+    t18 = 1.0 / t5
+    t20 = -t11 + t6 * t16 * t18
+    t22 = np.exp(-t7)
+    t23 = -1.0 + t6
+    t24 = np.power(t5, 2.0 * t23)
+    t25 = t22 * t24
+    t27 = t1 * t3
+    t28 = theta - 1.0
+    t29 = np.power(t27, t28)
+    t30 = np.power(t5, -t6)
+    t31 = t28 * t30
+    t32 = 1.0 + t31
+    t34 = 1.0 / u_rot
+    t35 = 1.0 / v_rot
+    t36 = t34 * t35
+    t37 = t29 * t32 * t36
+    t45 = t25 * t29
+    t46 = np.log(t27)
         
-        # Handle potential numerical issues
-        if (t5 > 0) and (t27 > 0) and (t32 != 0):
-            deriv[m] = (
-                (-t7 * t20 * t25 * t37 +
-                t25 * (-2.0 * t11 + 2.0 * t23 * t16 * t18) * t37 +
-                t45 * t46 * t32 * t36 +
-                t45 * (t30 - t31 * t20) * t34 * t35) /
-                (t22 * t24 * t29 * t32) * u * v
-            )
-        else:
-            deriv[m] = 0.0
-    return deriv
+    # Create mask for valid calculations
+    mask = (t5 > 0) & (t27 > 0) & (t32 != 0)
+    
+    # Initialize derivative array
+    deriv = np.zeros_like(theta)
+    
+    # Calculate derivative only for valid entries
+    deriv[mask] = (
+        (-t7[mask] * t20[mask] * t25[mask] * t37[mask] +
+        t25[mask] * (-2.0 * t11[mask] + 2.0 * t23[mask] * t16[mask] * t18[mask]) * t37[mask] +
+        t45[mask] * t46[mask] * t32[mask] * t36[mask] +
+        t45[mask] * (t30[mask] - t31[mask] * t20[mask]) * t34[mask] * t35[mask]) /
+        (t22[mask] * t24[mask] * t29[mask] * t32[mask]) * u_rot[mask] * v_rot[mask]
+    )
+    deriv *= sign
+    return deriv.squeeze()
 
 def _derivative_2nd(y, theta, family_code=401): 
     """
     Second derivative of the Gumbel copula log-likelihood with respect to theta.
     """
-    M = y.shape[0]
-    deriv = np.empty(M, dtype=np.float64)
-    eps = np.finfo(float).eps
-    y = np.clip(y, eps, 1 - eps)
+    theta = np.asarray(theta).copy()      # <- prevents in-place mutation of caller's array
+    y = np.asarray(y).copy()
+
+    u = np.clip(y[:, 0], 1e-12, 1 - 1e-12).reshape(-1, 1)
+    v = np.clip(y[:, 1], 1e-12, 1 - 1e-12).reshape(-1, 1)
+
+    rotation = get_effective_rotation(theta, family_code)
+    print(rotation)
+    u_rot, v_rot = u.copy(), v.copy()
     
-    for m in range(M):
-        if M == 1:
-            theta_m = theta
-        else:
-            theta_m = theta[m]
-            
-        u = y[m, 0]
-        v = y[m, 1]
+    # 180° rotation (survival)
+    mask_1 = (rotation == 1)
+    u_rot[mask_1] = 1 - u_rot[mask_1]
+    v_rot[mask_1] = 1 - v_rot[mask_1]
+
+    # 90° rotation
+    mask_2 = (rotation == 2)
+    v_rot[mask_2] = 1 - v_rot[mask_2]
+    theta[mask_2] = -theta[mask_2]
+
+    # 270° rotation
+    mask_3 = (rotation == 3)
+    v_rot[mask_3] = 1 - v_rot[mask_3]
+    theta[mask_3] = -theta[mask_3]
+
+
+    t3 = np.log(np.maximum(u_rot, 1e-12))
+    t4 = np.power(-t3, 1.0*theta)
+    t5 = np.log(np.maximum(v_rot, 1e-12))
+    t6 = np.power(-t5, 1.0*theta)
+    t7 = t4+t6
+    t8 = 1/theta
+    t9 = np.power(np.maximum(t7, 1e-12), 1.0*t8)
+    t10 = theta*theta
+    t11 = 1/t10
+    t12 = np.log(np.maximum(t7, 1e-12))
+    t13 = t11*t12
+    t14 = np.log(np.maximum(-t3, 1e-12))
+    t16 = np.log(np.maximum(-t5, 1e-12))
+    t18 = t4*t14+t6*t16
+    t20 = 1/np.maximum(t7, 1e-12)
+    t22 = -t13+t8*t18*t20
+    t23 = t22*t22
+    t25 = np.exp(-t9)
+    t27 = t25/u_rot
+    t29 = 1/v_rot
+    t30 = -1.0+t8
+    t31 = np.power(np.maximum(t7, 1e-12), 2.0*t30)
+    t32 = t29*t31
+    t33 = t3*t5
+    t34 = theta-1.0
+    t35 = np.power(np.maximum(np.abs(t33), 1e-12), 1.0*t34)
+    t36 = np.power(np.maximum(t7, 1e-12), -1.0*t8)
+    t37 = t34*t36
+    t38 = 1.0+t37
+    t39 = t35*t38
+    t40 = t32*t39
+    t44 = 1/t10/theta*t12
+    t47 = t11*t18*t20
+    t49 = t14*t14
+    t51 = t16*t16
+    t53 = t4*t49+t6*t51
+    t56 = t18*t18
+    t58 = t7*t7
+    t59 = 1/np.maximum(t58, 1e-12)
+    t61 = 2.0*t44-2.0*t47+t8*t53*t20-t8*t56*t59
+    t65 = t9*t9
+    t70 = t9*t22*t27
+    t74 = -2.0*t13+2.0*t30*t18*t20
+    t75 = t74*t35
+    t80 = np.log(np.maximum(np.abs(t33), 1e-12))
+    t87 = t36-t37*t22
+    t88 = t35*t87
+    t17 = t27*t29
+    t15 = t74*t74
+    t2 = t31*t35
+    t1 = t80*t80
         
-        t3 = np.log(u)
-        t4 = np.power(-t3, 1.0*theta_m)
-        t5 = np.log(v)
-        t6 = np.power(-t5, 1.0*theta_m)
-        t7 = t4+t6
-        t8 = 1/theta_m
-        t9 = np.power(t7, 1.0*t8)
-        t10 = theta_m*theta_m
-        t11 = 1/t10
-        t12 = np.log(t7)
-        t13 = t11*t12
-        t14 = np.log(-t3)
-        t16 = np.log(-t5)
-        t18 = t4*t14+t6*t16
-        t20 = 1/t7
-        t22 = -t13+t8*t18*t20
-        t23 = t22*t22
-        t25 = np.exp(-t9)
-        t27 = t25/u
-        t29 = 1/v
-        t30 = -1.0+t8
-        t31 = np.power(t7, 2.0*t30)
-        t32 = t29*t31
-        t33 = t3*t5
-        t34 = theta_m-1.0
-        t35 = np.power(t33, 1.0*t34)
-        t36 = np.power(t7, -1.0*t8)
-        t37 = t34*t36
-        t38 = 1.0+t37
-        t39 = t35*t38
-        t40 = t32*t39
-        t44 = 1/t10/theta_m*t12
-        t47 = t11*t18*t20
-        t49 = t14*t14
-        t51 = t16*t16
-        t53 = t4*t49+t6*t51
-        t56 = t18*t18
-        t58 = t7*t7
-        t59 = 1/t58
-        t61 = 2.0*t44-2.0*t47+t8*t53*t20-t8*t56*t59
-        t65 = t9*t9
-        t70 = t9*t22*t27
-        t74 = -2.0*t13+2.0*t30*t18*t20
-        t75 = t74*t35
-        t80 = np.log(t33)
-        t87 = t36-t37*t22
-        t88 = t35*t87
-        t17 = t27*t29
-        t15 = t74*t74
-        t2 = t31*t35
-        t1 = t80*t80
+    deriv = (-t9*t23*t27*t40-t9*t61*t27*t40+t65*t23*t27*t40-2.0*t70*t32*t75*t38
+        -2.0*t70*t32*t35*t80*t38-2.0*t70*t32*t88+t17*t31*t15*t39+t17*t31*(4.0*t44-4.0*
+        t47+2.0*t30*t53*t20-2.0*t30*t56*t59)*t39+2.0*t27*t32*t75*t80*t38+2.0*t17*t31*
+        t74*t88+t17*t2*t1*t38+2.0*t17*t2*t80*t87+t17*t2*(-2.0*t36*t22+t37*t23-
+        t37*t61))
         
-        # Handle potential numerical issues
-        if (t7 > 0) and (t33 > 0) and (t38 != 0):
-            deriv[m] = (-t9*t23*t27*t40-t9*t61*t27*t40+t65*t23*t27*t40-2.0*t70*t32*t75*t38
-                -2.0*t70*t32*t35*t80*t38-2.0*t70*t32*t88+t17*t31*t15*t39+t17*t31*(4.0*t44-4.0*
-                t47+2.0*t30*t53*t20-2.0*t30*t56*t59)*t39+2.0*t27*t32*t75*t80*t38+2.0*t17*t31*
-                t74*t88+t17*t2*t1*t38+2.0*t17*t2*t80*t87+t17*t2*(-2.0*t36*t22+t37*t23-
-                t37*t61))
-        else:
-            deriv[m] = 0.0
-        
-    return deriv
+    return deriv.squeeze()
