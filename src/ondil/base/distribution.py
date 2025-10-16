@@ -1,6 +1,6 @@
-import warnings
 from abc import ABC, abstractmethod
 from typing import Dict, Optional, Tuple
+import warnings
 
 import numpy as np
 import scipy.optimize as opt
@@ -269,7 +269,6 @@ class Distribution(ABC):
 
 
 class MultivariateDistributionMixin(ABC):
-
     # TODO: The element link functions should be defined here as well.
 
     @staticmethod

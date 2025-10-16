@@ -1,3 +1,4 @@
+from .display import DiagnosticDisplay
 from .distribution import Distribution, MultivariateDistributionMixin, ScipyMixin, CopulaMixin, MarginalCopulaMixin
 from .estimation_method import EstimationMethod
 from .estimator import Estimator, OndilEstimatorMixin
@@ -12,4 +13,5 @@ __all__ = [
     "MultivariateDistributionMixin",
     "CopulaMixin",
     "MarginalCopulaMixin",
+    "DiagnosticDisplay",
 ]
