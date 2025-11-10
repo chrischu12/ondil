@@ -23,6 +23,8 @@ All distributions are based on `scipy.stats` distributions. We implement the pro
 | [`Normal`](#ondil.distributions.Normal)                               | Gaussian (mean and standard deviation) | `scipy.stats.norm`      |
 | [`NormalMeanVariance`](#ondil.distributions.NormalMeanVariance)       | Gaussian (mean and variance)           | `scipy.stats.norm`      |
 | [`StudentT`](#ondil.distributions.StudentT)                           | Student's $t$ distribution             | `scipy.stats.t`         |
+| [`SkewT`](#ondil.distributions.SkewT)                                 | Skewed Student's $t$ distribution      | -                       |
+| [`SkewTMeanStd`](#ondil.distributions.SkewTMeanStd)                   | Skewed Student's $t$ distribution (mean and standard deviation)  | - |
 | [`JSU`](#ondil.distributions.JSU)                                     | Johnson's SU distribution              | `scipy.stats.johnsonsu` |
 | [`Gamma`](#ondil.distributions.Gamma)                                 | Gamma distribution                     | `scipy.stats.gamma`     |
 | [`LogNormal`](#ondil.distributions.LogNormal)                         | Log-normal distribution                | `scipy.stats.lognorm`   |
@@ -38,6 +40,8 @@ All distributions are based on `scipy.stats` distributions. We implement the pro
 | [`BetaInflatedZero`](#ondil.distributions.BetaInflatedZero)           | Zero Inflated Beta distribution        | -                       |
 | [`ZeroAdjustedGamma`](#ondil.distributions.ZeroAdjustedGamma)         | Zero Adjusted Gamma distribution       | -                       |
 | [`PowerExponential`](#ondil.distributions.PowerExponential)           | Power Exponential distribution         | -                       |
+| [`Weibull`](#ondil.distributions.Weibull)                               | Weibull distribution                   | `scipy.stats.weibull_min`|
+
 
 | Distribution                                                                                                      | Description                                              | Scale Matrix Parameterization           | Formula                                                                         |
 | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------- |
@@ -56,15 +60,23 @@ All distributions are based on `scipy.stats` distributions. We implement the pro
 
 ::: ondil.distributions.NormalMeanVariance
 
+::: ondil.distributions.LogNormal
+
+::: ondil.distributions.LogNormalMedian
+
 ::: ondil.distributions.StudentT
+
+::: ondil.distributions.SkewT
+
+::: ondil.distributions.SkewTMeanStd
 
 ::: ondil.distributions.JSU
 
 ::: ondil.distributions.Gamma
 
-::: ondil.distributions.LogNormal
+::: ondil.distributions.InverseGamma
 
-::: ondil.distributions.LogNormalMedian
+::: ondil.distributions.ZeroAdjustedGamma
 
 ::: ondil.distributions.Logistic
 
@@ -76,17 +88,15 @@ All distributions are based on `scipy.stats` distributions. We implement the pro
 
 ::: ondil.distributions.Beta
 
-::: ondil.distributions.Gumbel
-
 ::: ondil.distributions.BetaInflated
+
+::: ondil.distributions.BetaInflatedZero
+
+::: ondil.distributions.Gumbel
 
 ::: ondil.distributions.ReverseGumbel
 
-::: ondil.distributions.InverseGamma
-
-::: ondil.distributions.ZeroAdjustedGamma
-
-::: ondil.distributions.BetaInflatedZero
+::: ondil.distributions.Weibull
 
 ## Multivariate Distributions
 

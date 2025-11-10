@@ -1,6 +1,10 @@
 from .beta import Beta
 from .betainflated import BetaInflated
 from .betainflatedzero import BetaInflatedZero
+from .bicop_clayton import BivariateCopulaClayton
+from .bicop_gumbel import BivariateCopulaGumbel
+from .bicop_normal import BivariateCopulaNormal
+from .bicop_studentt import BivariateCopulaStudentT
 from .exponential import Exponential
 from .gamma import Gamma
 from .gumbel import Gumbel
@@ -19,18 +23,17 @@ from .mv_t_modchol import MultivariateStudentTInverseModifiedCholesky
 from .normal import Normal, NormalMeanVariance
 from .powerexponential import PowerExponential
 from .reversegumbel import ReverseGumbel
+from .skew_t import SkewT, SkewTMeanStd
 from .studentt import StudentT
+from .weibull import Weibull
 from .zeroadjustedgamma import ZeroAdjustedGamma
-from .bicop_normal import BivariateCopulaNormal
-from .bicop_gumbel import BivariateCopulaGumbel
-from .mv_marg_cop import MarginalCopula
-from .bicop_clayton import BivariateCopulaClayton
-from .bicop_studentt import BivariateCopulaStudentT
 
 __all__ = [
     "Normal",
     "NormalMeanVariance",
     "StudentT",
+    "SkewT",
+    "SkewTMeanStd",
     "JSU",
     "BetaInflated",
     "BetaInflatedZero",
@@ -54,7 +57,7 @@ __all__ = [
     "ZeroAdjustedGamma",
     "BivariateCopulaNormal",
     "BivariateCopulaGumbel",
-    "MarginalCopula",
     "BivariateCopulaClayton",
     "BivariateCopulaStudentT",
+    "Weibull",
 ]
