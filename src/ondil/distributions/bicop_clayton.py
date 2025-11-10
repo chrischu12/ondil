@@ -551,7 +551,7 @@ def _derivative_1st(y, chol, family_code):
 
     return deriv.squeeze()
 
-
+# Second derivative function
 def _derivative_2nd(y, theta, family_code):
     """
     Second derivative of Clayton copula PDF w.r.t. parameter theta.
