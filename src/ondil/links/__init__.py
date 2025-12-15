@@ -3,6 +3,7 @@ from .copulalinks import (
     GumbelLink,
     KendallsTauToParameter,
     KendallsTauToParameterClayton,
+    KendallsTauToParameterFrank,
     KendallsTauToParameterGumbel,
 )
 from .identitylinks import Identity
@@ -37,4 +38,5 @@ __all__ = [
     "GumbelLink",
     "KendallsTauToParameterGumbel",
     "KendallsTauToParameterClayton",
+    "KendallsTauToParameterFrank",
 ]

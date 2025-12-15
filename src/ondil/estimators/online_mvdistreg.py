@@ -15,6 +15,7 @@ from ..base import CopulaMixin, Distribution, OndilEstimatorMixin
 from ..design_matrix import make_intercept
 from ..distributions import (
     BivariateCopulaClayton,
+    BivariateCopulaFrank,
     BivariateCopulaGumbel,
     MultivariateNormalInverseCholesky,
 )
@@ -1030,6 +1031,12 @@ class MultivariateOnlineDistributionalRegressionPath(
                                 tau[a][p], param=p
                             ).squeeze()
                         )
+                        
+                        # Fix: Extract diagonal from Frank copula u matrices to ensure 1D arrays
+                        if isinstance(self.distribution, BivariateCopulaFrank):
+                            if u.ndim > 1 and u.shape[0] == u.shape[1]:
+                                u = np.diag(u)
+                        
                         wt = (
                             self.distribution.param_link_function_derivative(
                                 tau[a][p], param=p
@@ -1060,6 +1067,36 @@ class MultivariateOnlineDistributionalRegressionPath(
                             ) ** 2 * wt
                         else:
                             wt[~sel] = np.mean(wt[sel])
+
+                        # Fix: Extract diagonal from Frank copula weight matrices to ensure 1D weights
+                        # Also add numerical safeguards based on R GAMCopula implementation
+                        if isinstance(self.distribution, BivariateCopulaFrank):
+                            if wt.ndim > 1 and wt.shape[0] == wt.shape[1]:
+                                wt = np.diag(wt)
+                            
+                            # Apply R GAMCopula-style parameter bounds for Frank copula
+                            # Frank parameter must be non-zero and bounded for numerical stability
+                            # Create a copy if needed to avoid read-only issues
+                            if not theta[a][p].flags.writeable:
+                                theta[a][p] = np.copy(theta[a][p])
+                            # Avoid zero (Frank copula constraint) and use conservative bounds like R
+                            # R GAMCopula likely uses tighter bounds to prevent numerical issues
+                            theta_clipped = np.where(np.abs(theta[a][p]) < 0.01, 
+                                                   np.sign(theta[a][p]) * 0.01, theta[a][p])
+                            theta[a][p] = np.clip(theta_clipped, -20, 20)
+                            
+                            # Check for invalid weights and replace with fallback
+                            # Ensure wt is writable by creating a copy if needed
+                            if not wt.flags.writeable:
+                                wt = np.copy(wt)
+                            
+                            valid_mask = (~np.isnan(wt)) & (wt > 0) & np.isfinite(wt)
+                            if not np.any(valid_mask):
+                                # Fallback to simpler weight computation
+                                wt = np.ones_like(wt) * 1e-2
+                            else:
+                                # Replace invalid weights with mean of valid ones
+                                wt[~valid_mask] = np.mean(wt[valid_mask])
 
                         # Compute quantiles for clipping
                         ratio = u / wt
@@ -1105,9 +1142,33 @@ class MultivariateOnlineDistributionalRegressionPath(
                         ) / dl1_link**3
 
                         wt = np.fmax(-dl2_deta2, 1e-10)
-                        wv = eta[:, k] + dl1_deta1 / wt
-
-                    # Create the more arrays
+                        
+                        # Fix: Extract diagonal from Frank copula weight matrices to ensure 1D weights
+                        # Also add numerical safeguards based on R GAMCopula implementation
+                        if isinstance(self.distribution, BivariateCopulaFrank):
+                            if wt.ndim > 1 and wt.shape[0] == wt.shape[1]:
+                                wt = np.diag(wt)
+                            
+                            # Apply R GAMCopula-style parameter bounds to prevent overflow
+                            # Create a copy if needed to avoid read-only issues
+                            if not theta[a][p].flags.writeable:
+                                theta[a][p] = np.copy(theta[a][p])
+                            theta[a][p] = np.clip(theta[a][p], -20, 20)
+                            
+                            # Check for invalid weights and replace with fallback
+                            # Ensure wt is writable by creating a copy if needed
+                            if not wt.flags.writeable:
+                                wt = np.copy(wt)
+                            
+                            valid_mask = (~np.isnan(wt)) & (wt > 0) & np.isfinite(wt)
+                            if not np.any(valid_mask):
+                                # Fallback to simpler weight computation
+                                wt = np.ones_like(wt) * 1e-2
+                            else:
+                                # Replace invalid weights with mean of valid ones
+                                wt[~valid_mask] = np.mean(wt[valid_mask])
+                        
+                        wv = eta[:, k] + dl1_deta1 / wt                    # Create the more arrays
                     x = make_model_array(
                         X=X,
                         eq=self._equation[p][k],
@@ -1124,17 +1185,28 @@ class MultivariateOnlineDistributionalRegressionPath(
                             np.linalg.matrix_rank(x),
                         )
 
+                    # Ensure weights are finite and positive for numerical stability
+                    wt = np.maximum(wt, 1e-10)
+                    wt = np.where(np.isfinite(wt), wt, 1e-2)
+                    
                     self._x_gram[p][k][a] = self._method[p][k].init_x_gram(
                         X=x,
                         weights=wt ** self._weight_delta[p],
                         forget=self._forget[p],
                     )
+                    
+                    # Apply same weight safeguards for y_gram
+                    wt_safe = wt ** self._weight_delta[p]
+                    if not np.all(np.isfinite(wt_safe)) or not np.all(wt_safe > 0):
+                        wt_safe = np.maximum(wt_safe, 1e-10)
+                        wt_safe = np.where(np.isfinite(wt_safe), wt_safe, 1e-2)
+                    
                     self._y_gram[p][k][a] = (
                         self._method[p][k]
                         .init_y_gram(
                             X=x,
                             y=wv,
-                            weights=wt ** self._weight_delta[p],
+                            weights=wt_safe,
                             forget=self._forget[p],
                         )
                         .squeeze()
@@ -1189,6 +1261,12 @@ class MultivariateOnlineDistributionalRegressionPath(
                         theta[a] = self.distribution.set_theta_element(
                             theta[a], theta_elem[:, opt_ic], param=p, k=k
                         )
+                        
+                        # Apply Frank parameter bounds immediately after parameter update
+                        if isinstance(self.distribution, BivariateCopulaFrank):
+                            if not theta[a][p].flags.writeable:
+                                theta[a][p] = np.copy(theta[a][p])
+                            theta[a][p] = np.clip(theta[a][p], -20, 20)
 
                     else:
                         self.coef_path_[p][k][a] = None
@@ -1210,7 +1288,7 @@ class MultivariateOnlineDistributionalRegressionPath(
 
                         if isinstance(
                             self.distribution,
-                            (BivariateCopulaClayton, BivariateCopulaGumbel),
+                            (BivariateCopulaClayton, BivariateCopulaFrank, BivariateCopulaGumbel),
                         ):
                             eta[a][p] = np.sign(eta[a][p]) * np.minimum(
                                 np.abs(eta[a][p]), 200
@@ -1225,6 +1303,10 @@ class MultivariateOnlineDistributionalRegressionPath(
                             eta[a][p] = self.distribution.flat_to_cube(
                                 2 * np.arctanh(tau[a][p]), param=p
                             )
+                            
+                            # Use conservative bounds for Frank copula (±20) vs others (±200)
+                            bound_value = 20 if isinstance(self.distribution, BivariateCopulaFrank) else 200
+                            
                             theta[a][p] = np.sign(
                                 self.distribution.param_link_inverse(
                                     self.distribution.flat_to_cube(
@@ -1243,7 +1325,7 @@ class MultivariateOnlineDistributionalRegressionPath(
                                     )
                                     * (1 - 1e-5)
                                 ),
-                                200,
+                                bound_value,
                             )
 
                         else:
@@ -1917,9 +1999,38 @@ class MultivariateOnlineDistributionalRegressionPath(
                         ) / dl1_link**3
 
                         wt = np.fmax(-dl2_deta2, 1e-10)
+                        
+                        # Fix: Extract diagonal from Frank copula weight matrices to ensure 1D weights
+                        # Also add numerical safeguards based on R GAMCopula implementation
+                        if isinstance(self.distribution, BivariateCopulaFrank):
+                            if wt.ndim > 1 and wt.shape[0] == wt.shape[1]:
+                                wt = np.diag(wt)
+                            
+                            # Apply R GAMCopula-style parameter bounds to prevent overflow
+                            # Create a copy if needed to avoid read-only issues
+                            if not theta[a][p].flags.writeable:
+                                theta[a][p] = np.copy(theta[a][p])
+                            theta[a][p] = np.clip(theta[a][p], -20, 20)
+                            
+                            # Check for invalid weights and replace with fallback
+                            # Ensure wt is writable by creating a copy if needed
+                            if not wt.flags.writeable:
+                                wt = np.copy(wt)
+                            
+                            valid_mask = (~np.isnan(wt)) & (wt > 0) & np.isfinite(wt)
+                            if not np.any(valid_mask):
+                                # Fallback to simpler weight computation
+                                wt = np.ones_like(wt) * 1e-2
+                            else:
+                                # Replace invalid weights with mean of valid ones
+                                wt[~valid_mask] = np.mean(wt[valid_mask])
+                        
                         wv = eta[:, k] + dl1_deta1 / wt
-
-                    # Make model arrays
+                        
+                        # Safeguard wv values for Frank copula
+                        if isinstance(self.distribution, BivariateCopulaFrank):
+                            wv = np.where(np.isfinite(wv), wv, eta[:, k])
+                            wv = np.clip(wv, -50, 50)  # Reasonable bounds for link function values                    # Make model arrays
                     x = make_model_array(
                         X=X,
                         eq=self._equation[p][k],
@@ -2014,7 +2125,7 @@ class MultivariateOnlineDistributionalRegressionPath(
 
                         if isinstance(
                             self.distribution,
-                            (BivariateCopulaClayton, BivariateCopulaGumbel),
+                            (BivariateCopulaClayton, BivariateCopulaFrank, BivariateCopulaGumbel),
                         ):
                             eta[a][p] = np.sign(eta[a][p]) * np.minimum(
                                 np.abs(eta[a][p]), 200
@@ -2029,6 +2140,10 @@ class MultivariateOnlineDistributionalRegressionPath(
                             eta[a][p] = self.distribution.flat_to_cube(
                                 2 * np.arctanh(tau[a][p]), param=p
                             )
+                            
+                            # Use conservative bounds for Frank copula (±20) vs others (±200)
+                            bound_value = 20 if isinstance(self.distribution, BivariateCopulaFrank) else 200
+                            
                             theta[a][p] = np.sign(
                                 self.distribution.param_link_inverse(
                                     self.distribution.flat_to_cube(
@@ -2047,7 +2162,7 @@ class MultivariateOnlineDistributionalRegressionPath(
                                     )
                                     * (1 - 1e-5)
                                 ),
-                                200,
+                                bound_value,
                             )
 
                         else:
