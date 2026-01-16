@@ -390,12 +390,10 @@ def _log_likelihood_t(y, rho, nu):
     UMAX = 1 - 1e-12
     y_clipped = np.clip(y, UMIN, UMAX)
 
-    t1 = np.array([
-        st.t.ppf(y_clipped[i, 0], df=nu[i]) for i in range(len(y_clipped))
-    ]).reshape(-1, 1)
-    t2 = np.array([
-        st.t.ppf(y_clipped[i, 1], df=nu[i]) for i in range(len(y_clipped))
-    ]).reshape(-1, 1)
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)
+    nu_flat = nu.flatten()
+    t1 = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    t2 = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     # Bivariate t copula density (following C code structure)
     # f = StableGammaDivision((nu+2)/2, nu/2) / (nu*pi*sqrt(1-rho^2)*dt(t1,nu)*dt(t2,nu))
@@ -404,9 +402,9 @@ def _log_likelihood_t(y, rho, nu):
     # Calculate the gamma ratio using stable division
     gamma_ratio = stable_gamma_division((nu + 2.0) / 2.0, nu / 2.0)
 
-    # Calculate t distribution PDFs (dt in C code)
-    dt1 = st.t.pdf(t1, df=nu)
-    dt2 = st.t.pdf(t2, df=nu)
+    # OPTIMIZED: Vectorized t distribution PDFs (major speedup)
+    dt1 = st.t.pdf(t1.flatten(), df=nu_flat).reshape(-1, 1)
+    dt2 = st.t.pdf(t2.flatten(), df=nu_flat).reshape(-1, 1)
 
     # Calculate the quadratic form in the exponent
     quad_form = (t1 * t1 + t2 * t2 - 2.0 * rho * t1 * t2) / (nu * (1 - rho**2))
@@ -459,12 +457,10 @@ def _derivative_1st_rho_l(y, rho, nu):
 
     c = _log_likelihood_t(y_clipped, rho, nu).reshape(-1, 1)
 
-    t1 = np.array([st.t.ppf(y_clipped[i, 0], df=nu[i]) for i in range(len(y))]).reshape(
-        -1, 1
-    )
-    t2 = np.array([st.t.ppf(y_clipped[i, 1], df=nu[i]) for i in range(len(y))]).reshape(
-        -1, 1
-    )
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)
+    nu_flat = nu.flatten()
+    t1 = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    t2 = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     # Calculate current likelihood
     t3 = -(nu + 2.0) / 2.0
@@ -485,12 +481,10 @@ def _derivative_1st_nu(y, rho, nu):
     eps = np.finfo(float).eps
     y_clipped = np.clip(y, eps, 1 - eps)
 
-    u = np.array([st.t.ppf(y_clipped[i, 0], df=nu[i]) for i in range(len(y))]).reshape(
-        -1, 1
-    )
-    v = np.array([st.t.ppf(y_clipped[i, 1], df=nu[i]) for i in range(len(y))]).reshape(
-        -1, 1
-    )
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)  
+    nu_flat = nu.flatten()
+    u = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    v = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     # Follow C code structure exactly
     t1 = sp.digamma((nu + 1.0) / 2.0)
