@@ -128,10 +128,12 @@ class BivariateCopulaStudentT(BivariateCopulaMixin, CopulaMixin, Distribution):
         M = y.shape[0]
         if param == 0:  # rho
             tau = st.kendalltau(y[:, 0], y[:, 1]).correlation
-            rho = np.full((M, 1), tau)
-            return rho
+            # Use R VineCopula transformation: sin(tau * pi/2)
+            rho = np.sin(tau * np.pi / 2.0)
+            return np.full((M, 1), rho)
         else:  # nu
-            nu = np.full((M, 1), 10)  # default degrees of freedom
+            # Use R VineCopula MLE default of 8
+            nu = np.full((M, 1), 8)  # default degrees of freedom
             return nu
 
     def cdf(self, y, theta):
