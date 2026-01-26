@@ -376,19 +376,21 @@ def _log_likelihood_t(y, rho, nu):
     """Log-likelihood for bivariate t copula"""
 
     y_clipped = np.clip(y, UMIN, UMAX)
-    nu1 = np.asarray(nu).ravel()        
-    t1 = st.t.ppf(y_clipped[:, 0], df=nu1).reshape(-1, 1)
-    t2 = st.t.ppf(y_clipped[:, 1], df=nu1).reshape(-1, 1)
+
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)
+    nu_flat = nu.flatten()
+    t1 = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    t2 = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
     # Bivariate t copula density (following C code structure)
     # f = StableGammaDivision((nu+2)/2, nu/2) / (nu*pi*sqrt(1-rho^2)*dt(t1,nu)*dt(t2,nu))
     #     * (1 + (t1^2 + t2^2 - 2*rho*t1*t2)/(nu*(1-rho^2)))^(-(nu+2)/2)
 
     # Calculate the gamma ratio using stable division
-    gamma_ratio = nu/2
-    # Calculate t distribution PDFs (dt in C code)
-    nu1 = np.asarray(nu).ravel()        
-    dt1 = st.t.pdf(t1[:, 0], df=nu1).reshape(-1, 1)
-    dt2 = st.t.pdf(t2[:, 0], df=nu1).reshape(-1, 1)
+    gamma_ratio = stable_gamma_division((nu + 2.0) / 2.0, nu / 2.0)
+
+    # OPTIMIZED: Vectorized t distribution PDFs (major speedup)
+    dt1 = st.t.pdf(t1.flatten(), df=nu_flat).reshape(-1, 1)
+    dt2 = st.t.pdf(t2.flatten(), df=nu_flat).reshape(-1, 1)
 
     # Calculate the quadratic form in the exponent
     quad_form = (t1 * t1 + t2 * t2 - 2.0 * rho * t1 * t2) / (nu * (1 - rho**2))
@@ -410,9 +412,10 @@ def _derivative_1st_rho(y, rho, nu):
 
     y_clipped = np.clip(y, UMIN, UMAX)
 
-    nu1 = np.asarray(nu).ravel()        
-    t1 = st.t.ppf(y_clipped[:, 0], df=nu1).reshape(-1, 1)
-    t2 = st.t.ppf(y_clipped[:, 1], df=nu1).reshape(-1, 1)
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)
+    nu_flat = nu.flatten()
+    t1 = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    t2 = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     t3 = -(nu + 2.0) / 2.0
     t10 = nu * (1.0 - rho * rho)
@@ -432,9 +435,11 @@ def _derivative_1st_rho_l(y, rho, nu):
     y_clipped = np.clip(y, UMIN, UMAX)
 
     c = _log_likelihood_t(y_clipped, rho, nu).reshape(-1, 1)
-    nu1 = np.asarray(nu).ravel()        
-    t1 = st.t.ppf(y_clipped[:, 0], df=nu1).reshape(-1, 1)
-    t2 = st.t.ppf(y_clipped[:, 1], df=nu1).reshape(-1, 1)
+
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)
+    nu_flat = nu.flatten()
+    t1 = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    t2 = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     # Calculate current likelihood
     t3 = -(nu + 2.0) / 2.0
@@ -454,9 +459,12 @@ def _derivative_1st_nu(y, rho, nu):
 
     eps = np.finfo(float).eps
     y_clipped = np.clip(y, eps, 1 - eps)
-    nu1 = np.asarray(nu).ravel()        
-    u = st.t.ppf(y_clipped[:, 0], df=nu1).reshape(-1, 1)
-    v = st.t.ppf(y_clipped[:, 1], df=nu1).reshape(-1, 1)
+
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)  
+    nu_flat = nu.flatten()
+    u = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    v = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
+>>>>>>> ee52de86fc17986768522b7a77a43a6526eea66a
 
     # Follow C code structure exactly
     t1 = sp.digamma((nu + 1.0) / 2.0)
@@ -499,9 +507,11 @@ def _derivative_1st_nu_l(y, rho, nu):
 
     eps = np.finfo(float).eps
     y_clipped = np.clip(y, eps, 1 - eps)
-    nu1 = np.asarray(nu).ravel()        
-    u = st.t.ppf(y_clipped[:, 0], df=nu1).reshape(-1, 1)
-    v = st.t.ppf(y_clipped[:, 1], df=nu1).reshape(-1, 1)
+    
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)  
+    nu_flat = nu.flatten()
+    u = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    v = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     # Calculate current likelihood
     c = _log_likelihood_t(y_clipped, rho, nu).reshape(-1, 1)
@@ -546,9 +556,11 @@ def _derivative_2nd_rho(y, rho, nu):
     """Second derivative wrt rho for t copula"""
 
     y_clipped = np.clip(y, UMIN, UMAX)
-    nu1 = np.asarray(nu).ravel()        
-    u = st.t.ppf(y_clipped[:, 0], df=nu1).reshape(-1, 1)
-    v = st.t.ppf(y_clipped[:, 1], df=nu1).reshape(-1, 1)
+    
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)
+    nu_flat = nu.flatten()
+    u = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    v = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     # Calculate current likelihood
     c = _log_likelihood_t(y_clipped, rho, nu).reshape(-1, 1)
@@ -575,9 +587,11 @@ def _derivative_2nd_nu(y, rho, nu):
 
     eps = np.finfo(float).eps
     y_clipped = np.clip(y, eps, 1 - eps)
-    nu1 = np.asarray(nu).ravel()        
-    u = st.t.ppf(y_clipped[:, 0], df=nu1).reshape(-1, 1)
-    v = st.t.ppf(y_clipped[:, 1], df=nu1).reshape(-1, 1)
+    
+    # OPTIMIZED: Vectorized quantile calculations (major speedup)  
+    nu_flat = nu.flatten()
+    u = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
+    v = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
 
     # Calculate current likelihood
     c = _log_likelihood_t(y_clipped, rho, nu).reshape(-1, 1)
