@@ -2,6 +2,7 @@ from .beta import Beta
 from .betainflated import BetaInflated
 from .betainflatedzero import BetaInflatedZero
 from .bicop_clayton import BivariateCopulaClayton
+from .bicop_frank import BivariateCopulaFrank
 from .bicop_gumbel import BivariateCopulaGumbel
 from .bicop_normal import BivariateCopulaNormal
 from .bicop_studentt import BivariateCopulaStudentT
@@ -60,6 +61,7 @@ __all__ = [
     "BivariateCopulaNormal",
     "BivariateCopulaGumbel",
     "BivariateCopulaClayton",
+    "BivariateCopulaFrank",
     "BivariateCopulaStudentT",
     "Weibull",
 ]
