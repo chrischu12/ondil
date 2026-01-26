@@ -464,7 +464,6 @@ def _derivative_1st_nu(y, rho, nu):
     nu_flat = nu.flatten()
     u = st.t.ppf(y_clipped[:, 0], df=nu_flat).reshape(-1, 1)
     v = st.t.ppf(y_clipped[:, 1], df=nu_flat).reshape(-1, 1)
->>>>>>> ee52de86fc17986768522b7a77a43a6526eea66a
 
     # Follow C code structure exactly
     t1 = sp.digamma((nu + 1.0) / 2.0)
