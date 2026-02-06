@@ -43,6 +43,10 @@ class BivariateCopulaStudentT(BivariateCopulaMixin, CopulaMixin, Distribution):
         self.family_code = family_code
         self.is_multivariate = True
         self._regularization_allowed = {0: False, 1: False}
+        
+        # Cache for joint MLE results to avoid recomputation
+        self._mle_cache = None
+        self._mle_cache_data_hash = None
 
     @staticmethod
     def fitted_elements(dim: int):
@@ -126,15 +130,153 @@ class BivariateCopulaStudentT(BivariateCopulaMixin, CopulaMixin, Distribution):
 
     def initial_values(self, y, param=0):
         M = y.shape[0]
+        
+        # Create a hash of the data to check if we need to recompute
+        data_hash = hash(y.tobytes())
+        
+        # Check if we have cached results for this data
+        if (self._mle_cache is None or 
+            self._mle_cache_data_hash != data_hash):
+            # Compute joint MLE once and cache results (like R BiCopEst does)
+            rho_opt, nu_opt = self.joint_mle_estimation(y)
+            self._mle_cache = (rho_opt, nu_opt)
+            self._mle_cache_data_hash = data_hash
+        
+        # Return the appropriate cached parameter
+        rho_opt, nu_opt = self._mle_cache
+        
         if param == 0:  # rho
-            tau = st.kendalltau(y[:, 0], y[:, 1]).correlation
-            # Use R VineCopula transformation: sin(tau * pi/2)
-            rho = np.sin(tau * np.pi / 2.0)
-            return np.full((M, 1), rho)
-        else:  # nu
-            # Use R VineCopula MLE default of 8
-            nu = np.full((M, 1), 8)  # default degrees of freedom
-            return nu
+            return np.full((M, 1), rho_opt)
+        else:  # nu  
+            return np.full((M, 1), nu_opt)
+    
+    def _estimate_initial_nu(self, y):
+        """
+        Estimate initial degrees of freedom parameter using maximum likelihood,
+        similar to R BiCopEst.
+        """
+        from scipy.optimize import minimize_scalar
+        
+        # First get the correlation parameter
+        tau = st.kendalltau(y[:, 0], y[:, 1]).correlation
+        rho_fixed = np.sin(tau * np.pi / 2.0)
+        
+        def negative_log_likelihood(nu):
+            try:
+                if nu <= 2.0 or nu > 100:  # Reasonable bounds
+                    return 1e10
+                    
+                # Create parameter arrays
+                rho_array = np.full(len(y), rho_fixed)
+                nu_array = np.full(len(y), nu)
+                
+                # Calculate log-likelihood
+                likelihood_values = _log_likelihood_t(y, rho_array, nu_array)
+                
+                # Handle edge cases
+                if not np.all(np.isfinite(likelihood_values)):
+                    return 1e10
+                if np.any(likelihood_values <= 0):
+                    return 1e10
+                    
+                log_likelihood = np.sum(np.log(likelihood_values))
+                return -log_likelihood  # Negative for minimization
+                
+            except Exception:
+                return 1e10
+        
+        # Optimize nu in reasonable range
+        result = minimize_scalar(
+            negative_log_likelihood,
+            bounds=(2.1, 30.0),  # Reasonable range for nu
+            method='bounded',
+            options={'xatol': 1e-6, 'maxiter': 100}
+        )
+        
+        if result.success and result.x > 2.0:
+            return result.x
+        else:
+            # Fallback to a reasonable default if optimization fails
+            return 4.0
+    
+    def joint_mle_estimation(self, y):
+        """
+        Fast joint maximum likelihood estimation of both rho and nu parameters.
+        Optimized based on performance analysis.
+        
+        Args:
+            y (np.ndarray): Bivariate data of shape (n, 2)
+            
+        Returns:
+            tuple: (rho_optimal, nu_optimal)
+        """
+        from scipy.optimize import minimize
+        
+        # Get initial values using fast methods
+        tau = st.kendalltau(y[:, 0], y[:, 1]).correlation
+        rho_init = np.sin(tau * np.pi / 2.0)  # Initial rho from Kendall's tau
+        
+        # Fast initial nu estimation using grid search (much faster than full optimization)
+        nu_candidates = [2.2, 2.5, 3.0, 4.0, 5.0, 6.0]
+        best_nu_init = 4.0
+        best_loglik = -np.inf
+        
+        for nu_test in nu_candidates:
+            try:
+                rho_array = np.full(len(y), rho_init)
+                nu_array = np.full(len(y), nu_test)
+                likelihood_values = _log_likelihood_t(y, rho_array, nu_array)
+                
+                if np.all(np.isfinite(likelihood_values)) and np.all(likelihood_values > 0):
+                    loglik = np.sum(np.log(likelihood_values))
+                    if loglik > best_loglik:
+                        best_loglik = loglik
+                        best_nu_init = nu_test
+            except:
+                continue
+        
+        def negative_log_likelihood(params):
+            try:
+                rho, nu = params
+                
+                # Parameter bounds check
+                if abs(rho) >= 0.99 or nu <= 2.01 or nu > 100:
+                    return 1e10
+                    
+                # Create parameter arrays
+                rho_array = np.full(len(y), rho)
+                nu_array = np.full(len(y), nu)
+                
+                # Calculate log-likelihood
+                likelihood_values = _log_likelihood_t(y, rho_array, nu_array)
+                
+                # Handle edge cases
+                if not np.all(np.isfinite(likelihood_values)):
+                    return 1e10
+                if np.any(likelihood_values <= 0):
+                    return 1e10
+                    
+                log_likelihood = np.sum(np.log(likelihood_values))
+                return -log_likelihood  # Negative for minimization
+                
+            except Exception:
+                return 1e10
+        
+        # Fast joint optimization with relaxed tolerances
+        result = minimize(
+            negative_log_likelihood,
+            x0=[rho_init, best_nu_init],
+            bounds=[(-0.99, 0.99), (2.01, 100.0)],
+            method='L-BFGS-B',
+            options={'ftol': 1e-4, 'gtol': 1e-4, 'maxiter': 50}  # Much faster settings
+        )
+        
+        if result.success:
+            rho_opt, nu_opt = result.x
+            return rho_opt, nu_opt
+        else:
+            # Fallback to initial values
+            return rho_init, best_nu_init
 
     def cdf(self, y, theta):
         raise NotImplementedError("Not implemented")
@@ -289,6 +431,62 @@ class BivariateCopulaStudentT(BivariateCopulaMixin, CopulaMixin, Distribution):
 
     def get_regularization_size(self, dim: int) -> int:
         return dim
+
+    def r_style_nu_optimization(self, y, initial_rho=None):
+        """
+        R-style degrees of freedom optimization matching BiCopEst behavior.
+        
+        This implements the exact same optimization step that R does:
+        1. Fix rho parameter (use initial_rho or get from joint MLE)
+        2. Optimize only nu using optimize() over log(2) to log(30)
+        3. Use link function: 2 + 1e-08 + exp(nu)
+        
+        Args:
+            y: Bivariate data in [0,1]^2
+            initial_rho: Fixed rho value (if None, gets from joint MLE)
+            
+        Returns:
+            tuple: (optimized_rho, optimized_nu_log, optimized_nu_actual)
+        """
+        from scipy.optimize import minimize_scalar
+        
+        # Get initial rho if not provided
+        if initial_rho is None:
+            joint_vals = self.joint_mle_estimation(y)
+            initial_rho = joint_vals[0]
+        
+        def link_function(nu_log):
+            """R's link function: 2 + 1e-08 + exp(nu)"""
+            return 2.0 + 1e-8 + np.exp(nu_log)
+        
+        def negative_log_likelihood(nu_log):
+            """Negative log-likelihood for nu optimization (matching R's nllvec)"""
+            nu = link_function(nu_log)
+            
+            # Handle extreme values like R does
+            if nu == np.inf or nu > 30:
+                nu_log = np.log(30.0)
+                nu = link_function(nu_log)
+            
+            try:
+                # Use our existing log-likelihood function
+                loglik = _log_likelihood_t(y, initial_rho, nu)
+                return -np.sum(loglik)
+            except:
+                return 1e10  # Return large value for numerical issues
+        
+        # Optimize nu using R's approach: optimize over log(2) to log(30)
+        result = minimize_scalar(
+            negative_log_likelihood,
+            bounds=(np.log(2.0), np.log(30.0)),
+            method='bounded',
+            options={'xatol': 1e-8, 'maxiter': 100}
+        )
+        
+        optimized_nu_log = result.x
+        optimized_nu = link_function(optimized_nu_log)
+        
+        return initial_rho, optimized_nu_log, optimized_nu
 
 
 ##########################################################
