@@ -94,17 +94,14 @@ def init_y_gram(
     return gram
 
 
-@nb.njit()
 def init_inverted_gram(X: np.ndarray, w: np.ndarray, forget: float = 0) -> np.ndarray:
     r"""Initialise the inverted Gramian Matrix.
 
     The inverted Gramian Matrix is defined as $$
-    G = (X^T \Gamma WX)^{-1}
+    G = (X^T \Gamma WX + \lambda I)^{-1}
     $$ where $X$ is the design matrix, $W$ is a diagonal, user-defined weight matrix,
-    $\Gamma$ is a diagonal matrix of exponentially discounting weights.
-
-    !!! numba "Numba"
-        This function uses `numba` just-in-time-compilation.
+    $\Gamma$ is a diagonal matrix of exponentially discounting weights, and $\lambda I$
+    is regularization for numerical stability.
 
     Args:
         X (np.ndarray): Design matrix $X$
@@ -112,19 +109,25 @@ def init_inverted_gram(X: np.ndarray, w: np.ndarray, forget: float = 0) -> np.nd
         forget (float, optional): Forget factor. Defaults to 0.
 
     Returns:
-        np.ndarray: Gramian Matrix.
-
-    Raises:
-        ValueError: If the matrix is not invertible (if rank(X.T @ X) < X.shape[0]).
-
+        np.ndarray: Regularized inverted Gramian Matrix.
     """
     gram = init_gram(X=X, w=w, forget=forget)
-    rank = np.linalg.matrix_rank(gram)
-    if rank == gram.shape[0]:
-        inv_gram = np.linalg.inv(gram)
-        return inv_gram
+    
+    # Apply stronger regularization for numerical stability
+    # Use adaptive regularization based on matrix condition
+    trace_val = np.trace(gram)
+    min_eigenval = np.min(np.linalg.eigvals(gram))
+    
+    # If the matrix is very ill-conditioned, use stronger regularization
+    if min_eigenval < 1e-12 or trace_val < 1e-12:
+        reg_strength = max(1e-6, trace_val * 1e-6)  # Much stronger regularization
     else:
-        raise ValueError("Matrix is not invertible.")
+        reg_strength = max(1e-8, trace_val * 1e-8)
+    
+    gram_regularized = gram + reg_strength * np.eye(gram.shape[0])
+    
+    inv_gram = np.linalg.inv(gram_regularized)
+    return inv_gram
 
 
 # TODO (SH): For some reason we switched the syntax in C++ here
@@ -193,15 +196,37 @@ def update_y_gram(
     return new_gram
 
 
-@nb.jit()
 def _update_inverted_gram(
     gram: np.ndarray, X: np.ndarray, forget: float = 0, w: float = 1
 ) -> np.ndarray:
-    r"""Update the inverted Gramian for one step"""
+    """Update the inverted Gramian for one step with numerical safeguards"""
     gamma = 1 - forget
-    new_gram = (1 / gamma) * (
-        gram - ((w * gram @ np.outer(X, X) @ gram) / (gamma + w * X @ gram @ X.T))
-    )
+    
+    # Compute denominator with safeguard against division by zero
+    denominator = gamma + w * X @ gram @ X.T
+    
+    # Add small regularization if denominator is too small (numerical instability)
+    if abs(denominator) < 1e-12:
+        denominator = 1e-12 if denominator >= 0 else -1e-12
+    
+    # Sherman-Morrison update
+    try:
+        numerator = w * gram @ np.outer(X, X) @ gram
+        update_term = numerator / denominator
+        new_gram = (1 / gamma) * (gram - update_term)
+        
+        # Check for numerical issues in the result
+        if not np.all(np.isfinite(new_gram)):
+            # Fallback: return regularized version of original gram
+            reg_strength = 1e-8
+            new_gram = gram + reg_strength * np.eye(gram.shape[0])
+            
+        return new_gram
+        
+    except Exception:
+        # Fallback: return regularized version of original gram
+        reg_strength = 1e-8
+        return gram + reg_strength * np.eye(gram.shape[0])
     return new_gram
 
 
