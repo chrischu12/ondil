@@ -584,7 +584,7 @@ def _log_likelihood_t(y, rho, nu):
     #     * (1 + (t1^2 + t2^2 - 2*rho*t1*t2)/(nu*(1-rho^2)))^(-(nu+2)/2)
 
     # Calculate the gamma ratio using stable division
-    gamma_ratio = nu/2
+    gamma_ratio = stable_gamma_division((nu + 2.0) / 2.0, nu / 2.0)
 
     # OPTIMIZED: Vectorized t distribution PDFs (major speedup)
     dt1 = st.t.pdf(t1.flatten(), df=nu_flat).reshape(-1, 1)
