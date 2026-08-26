@@ -1,5 +1,19 @@
 # Author: Christian Schulz
 # License: GPL-3.0
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Portions of this file -- the log-likelihood, score and Hessian expressions
+# for the Gaussian copula -- were translated into Python from the C sources of
+# the R package VineCopula:
+#
+#     https://cran.r-project.org/package=VineCopula
+#     Thomas Nagler, Ulf Schepsmeier, Jakob Stoeber, Eike Christian Brechmann,
+#     Benedikt Graeler, Tobias Erhardt and others
+#     SPDX-License-Identifier: GPL-2.0-or-later OR GPL-3.0-or-later
+#
+# Redistributing those derivations under GPL-3.0-only is consistent with the
+# upstream dual GPL-2 | GPL-3 option. See THIRD_PARTY_NOTICES.md of the
+# replication package.
 
 from typing import Dict
 
@@ -44,7 +58,7 @@ class BivariateCopulaNormal(BivariateCopulaMixin, CopulaMixin, Distribution):
         val = theta[0]
         return np.asarray(val).reshape(-1, 1)
 
-    def set_initial_guess(self, theta, param):
+    def set_initial_guess(self, y, theta, param):
         return theta
 
     def dl1_dp1(self, y: np.ndarray, theta: Dict, param: int = 0):
@@ -59,7 +73,7 @@ class BivariateCopulaNormal(BivariateCopulaMixin, CopulaMixin, Distribution):
             derivative: The 1st derivatives.
         """
         rho = self.theta_to_params(theta)
-        deriv = _derivative_1st(y=y, rho=rho)
+        deriv = _derivative_1st(y, rho)
         return deriv
 
     def dl2_dp2(self, y: np.ndarray, theta: Dict, param: int = 0, clip=False):
@@ -74,7 +88,7 @@ class BivariateCopulaNormal(BivariateCopulaMixin, CopulaMixin, Distribution):
             derivative: The 2nd derivatives.
         """
         fitted_loc = self.theta_to_params(theta)
-        deriv = _derivative_2nd(y=y, fitted_loc=fitted_loc)
+        deriv = _derivative_2nd(y, fitted_loc)
         return deriv
 
     def element_score(self, y: np.ndarray, theta: Dict, param: int = 0, k: int = 0):

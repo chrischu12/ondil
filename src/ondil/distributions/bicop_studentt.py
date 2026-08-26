@@ -1,5 +1,19 @@
 # Author: Christian Schulz
 # License: GPL-3.0
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Portions of this file -- the log-likelihood, score and Hessian expressions
+# for the Student-t copula -- were translated into Python from the C sources of
+# the R package VineCopula:
+#
+#     https://cran.r-project.org/package=VineCopula
+#     Thomas Nagler, Ulf Schepsmeier, Jakob Stoeber, Eike Christian Brechmann,
+#     Benedikt Graeler, Tobias Erhardt and others
+#     SPDX-License-Identifier: GPL-2.0-or-later OR GPL-3.0-or-later
+#
+# Redistributing those derivations under GPL-3.0-only is consistent with the
+# upstream dual GPL-2 | GPL-3 option. See THIRD_PARTY_NOTICES.md of the
+# replication package.
 
 import math
 from typing import Dict, List, Tuple
@@ -142,7 +156,7 @@ class BivariateCopulaStudentT(BivariateCopulaMixin, CopulaMixin, Distribution):
     def theta_to_params(self, theta):
         return theta[0].reshape(-1, 1), theta[1].reshape(-1, 1)
 
-    def set_initial_guess(self, theta, param):
+    def set_initial_guess(self, y, theta, param):
         return theta
 
     # ------------------------------------------------------------------ #

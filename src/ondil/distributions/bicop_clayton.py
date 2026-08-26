@@ -1,5 +1,20 @@
 # Author: Christian Schulz
 # License: GPL-3.0
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Portions of this file -- the log-likelihood, score and Hessian expressions
+# for the Clayton copula, notably the second-derivative routine derived from
+# `diff2PDF_mod` -- were translated into Python from the C sources of
+# the R package VineCopula:
+#
+#     https://cran.r-project.org/package=VineCopula
+#     Thomas Nagler, Ulf Schepsmeier, Jakob Stoeber, Eike Christian Brechmann,
+#     Benedikt Graeler, Tobias Erhardt and others
+#     SPDX-License-Identifier: GPL-2.0-or-later OR GPL-3.0-or-later
+#
+# Redistributing those derivations under GPL-3.0-only is consistent with the
+# upstream dual GPL-2 | GPL-3 option. See THIRD_PARTY_NOTICES.md of the
+# replication package.
 
 import numpy as np
 import scipy.stats as st
@@ -47,7 +62,7 @@ class BivariateCopulaClayton(BivariateCopulaMixin, CopulaMixin, Distribution):
     def theta_to_scipy_params(self, theta: np.ndarray) -> dict:
         return {"theta": theta}
 
-    def set_initial_guess(self, theta, param):
+    def set_initial_guess(self, y, theta, param):
         return theta
 
     def initial_values(self, y, param=0):

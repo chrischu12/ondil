@@ -1,5 +1,21 @@
 # Author: Christian Schulz
 # License: GPL-3.0
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Portions of this file -- the log-likelihood, score and Hessian expressions
+# for the Gumbel copula, together with the h-function, its inverse and
+# `qcondgum` -- were translated into Python from the C sources of
+# the R package VineCopula:
+#
+#     https://cran.r-project.org/package=VineCopula
+#     Thomas Nagler, Ulf Schepsmeier, Jakob Stoeber, Eike Christian Brechmann,
+#     Benedikt Graeler, Tobias Erhardt and others
+#     SPDX-License-Identifier: GPL-2.0-or-later OR GPL-3.0-or-later
+#
+# Redistributing those derivations under GPL-3.0-only is consistent with the
+# upstream dual GPL-2 | GPL-3 option. See THIRD_PARTY_NOTICES.md of the
+# replication package.
+
 from typing import Dict
 
 import numpy as np
@@ -41,7 +57,7 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution, BivariateCopulaMixin):
         val = theta[0]
         return np.asarray(val).reshape(-1, 1)
 
-    def set_initial_guess(self, theta, param):
+    def set_initial_guess(self, y, theta, param):
         return theta
 
     def dl1_dp1(self, y: np.ndarray, theta: Dict, param: int = 0):
@@ -158,7 +174,7 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution, BivariateCopulaMixin):
     ) -> np.ndarray:
         """
         Conditional distribution function h(u|v) for the bivariate Gumbel copula.
-        Implementation based on vinecopulib package.
+        Translated from the C sources of the R package VineCopula.
 
         Args:
             u (np.ndarray): Array of shape (n,) with values in (0, 1).
@@ -231,7 +247,7 @@ class BivariateCopulaGumbel(CopulaMixin, Distribution, BivariateCopulaMixin):
     ) -> np.ndarray:
         """
         Inverse conditional distribution function h^(-1)(u|v) for the bivariate Gumbel copula.
-        Implementation based on vinecopulib package.
+        Translated from the C sources of the R package VineCopula.
 
         Args:
             u (np.ndarray): Array of shape (n,) with values in (0, 1).
