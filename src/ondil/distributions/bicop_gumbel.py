@@ -388,13 +388,12 @@ def qcondgum(q: np.ndarray, u: np.ndarray, de: np.ndarray) -> np.ndarray:
 
         mxdif = np.abs(dif)
 
-    # Final calculation with numerical protection
-    z2 = np.power(
-        np.maximum(
-            np.power(np.maximum(a, UMIN), de) - np.power(np.maximum(z1, UMIN), de), UMIN
-        ),
-        1.0 / np.maximum(de, UMIN),
-    )
+    # z2 = a * (1 - (z1/a)**de)**(1/de), factored so the exponent stays
+    # negative; forming a**de and z1**de separately overflows for large de.
+    la = np.log(np.maximum(a, UMIN))
+    lz1 = np.log(np.maximum(z1, UMIN))
+    ratio = np.exp(np.minimum(de * (lz1 - la), 0.0))
+    z2 = a * np.exp(np.log1p(-np.minimum(ratio, 1.0 - UMIN)) / np.maximum(de, UMIN))
     out = np.exp(-z2)
 
     return out.squeeze()
@@ -469,14 +468,16 @@ def _log_likelihood(y, theta, family_code=41):
     log_u = np.log(u_rot)
     log_v = np.log(v_rot)
 
-    t1 = (-log_u) ** theta + (-log_v) ** theta
+    # s carried in log space; the powers over/underflow for large theta
+    logs = np.logaddexp(theta * np.log(-log_u), theta * np.log(-log_v))
+    A = np.exp(logs / theta)
 
     f = (
-        -(t1 ** (1.0 / theta))
-        + (2.0 / theta - 2.0) * np.log(np.maximum(t1, UMIN))
+        -A
+        + (2.0 / theta - 2.0) * logs
         + (theta - 1.0) * np.log(np.maximum(np.abs(log_u * log_v), UMIN))
         - np.log(np.maximum(u_rot * v_rot, UMIN))
-        + np.log1p(np.maximum((theta - 1.0) * t1 ** (-1.0 / theta), -1 + UMIN))
+        + np.log1p(np.maximum((theta - 1.0) / A, -1 + UMIN))
     )
 
     # Handle numerical limits
@@ -540,76 +541,35 @@ def _derivative_1st(y, theta, family_code=41):
     # -t1, -t3 are positive, but guard anyway
     mt1 = np.maximum(-t1, eps)
     mt3 = np.maximum(-t3, eps)
-    # power terms: (-log u)^theta, (-log v)^theta
-    t2 = np.power(mt1, theta)
-    t4 = np.power(mt3, theta)
-    t5 = t2 + t4
-    t5_safe = np.maximum(t5, eps)  # for log(t5), 1/t5, power(t5, ...)
-    t6 = 1.0 / theta
-    t7 = np.power(t5_safe, t6)
-    t8 = theta * theta
-    t10 = np.log(np.minimum(t5_safe, max_log_arg))
-    t11 = (1.0 / t8) * t10
-    # log(-log u), log(-log v)
-    t12 = np.log(mt1)
-    t14 = np.log(mt3)
-    t16 = t2 * t12 + t4 * t14
-    t18 = 1.0 / t5_safe
+    # d(log c)/d(theta). The common factors exp(-A), s**(2(1/theta-1)) and
+    # (log u log v)**(theta-1) cancel analytically and are dropped rather than
+    # evaluated, since each over/underflows for large theta.
+    L1 = np.log(mt1)
+    L3 = np.log(mt3)
+    a1 = theta * L1
+    a3 = theta * L3
+    logs = np.logaddexp(a1, a3)
+    w1 = np.exp(a1 - logs)
+    w3 = np.exp(a3 - logs)
+    D = w1 * L1 + w3 * L3
+    A = np.exp(logs / theta)
+    dA = A * (D / theta - logs / theta**2)
 
-    t20 = -t11 + t6 * t16 * t18
-    # exp(-t7) (safe enough; t7>=0)
-    t22 = np.exp(-t7)
-    t23 = -1.0 + t6
-    # power(t5, 2*t23) can blow if t5~0 and exponent negative -> guard with t5_safe
-    t24 = np.power(t5_safe, 2.0 * t23)
-    t25 = t22 * t24
-    t27 = t1 * t3  # positive (neg*neg), but guard
-    t27_safe = np.maximum(t27, eps)
-
-    t28 = theta - 1.0
-    t29 = np.power(t27_safe, t28)
-    t30 = np.power(t5_safe, -t6)
-    t31 = t28 * t30
-    t32 = 1.0 + t31
-    # avoid division by ~0 later
-    t32_safe = np.where(
-        np.abs(t32) < eps, np.sign(t32 + 0.0) * eps + (t32 == 0) * eps, t32
+    denom_A = A + theta - 1.0
+    denom_A = np.where(
+        np.abs(denom_A) < eps, np.sign(denom_A + 0.0) * eps + (denom_A == 0) * eps,
+        denom_A,
     )
 
-    t34 = 1.0 / u_rot
-    t35 = 1.0 / v_rot
-    t36 = t34 * t35
-    t37 = t29 * t32_safe * t36
-    t45 = t25 * t29
-    t46 = np.log(t27_safe)
-
-    # ---- validity mask (stronger) ----
-    mask = (
-        np.isfinite(theta)
-        & np.isfinite(t5_safe)
-        & np.isfinite(t27_safe)
-        & np.isfinite(t22)
-        & np.isfinite(t24)
-        & np.isfinite(t29)
-        & np.isfinite(t32_safe)
-        & (t5_safe > 0)
-        & (t27_safe > 0)
-        & (np.abs(t32_safe) > 0)
+    deriv = (
+        -dA
+        + (dA + 1.0) / denom_A
+        - logs / theta**2
+        + (1.0 / theta - 2.0) * D
+        + L1
+        + L3
     )
-    deriv = np.zeros_like(theta)
-
-    # denominator: t22*t24*t29*t32 (guarded)
-    denom = t22 * t24 * t29 * t32_safe
-    denom_safe = np.where(
-        np.abs(denom) < eps, np.sign(denom + 0.0) * eps + (denom == 0) * eps, denom
-    )
-    numer = (
-        -t7 * t20 * t25 * t37
-        + t25 * (-2.0 * t11 + 2.0 * t23 * t16 * t18) * t37
-        + t45 * t46 * t32_safe * t36
-        + t45 * (t30 - t31 * t20) * t34 * t35
-    )
-    deriv[mask] = (numer[mask] / denom_safe[mask]) * u_rot[mask] * v_rot[mask]
+    deriv = np.where(np.isfinite(deriv), deriv, 0.0)
     deriv *= sign
     return deriv.squeeze()
 
@@ -651,87 +611,52 @@ def _derivative_2nd(y, theta, family_code=41):
         np.sign(theta + 0.0) * eps_theta + (theta == 0) * eps_theta,
         theta,
     )
-    # core logs (u_rot,v_rot already clipped away from 0/1, but keep safe)
+    # d^2 c / d theta^2 = c * ((dl/dth)^2 + d^2 l/dth^2), l = log c. Built from
+    # log s, D = dlog(s)/dth and Dd = d2log(s)/dth2, all numerically stable.
     t3 = np.log(np.maximum(u_rot, eps))
     t5 = np.log(np.maximum(v_rot, eps))
     mt3 = np.maximum(-t3, eps)
     mt5 = np.maximum(-t5, eps)
-    t4 = np.power(mt3, theta)
-    t6 = np.power(mt5, theta)
-    t7 = t4 + t6
-    t7s = np.maximum(t7, eps)
-    t8 = 1.0 / theta
-    t9 = np.power(t7s, t8)
-    t10 = theta * theta
-    t11 = 1.0 / t10
-    t12 = np.log(t7s)
-    t13 = t11 * t12
-    t14 = np.log(mt3)
-    t16 = np.log(mt5)
-    t18 = t4 * t14 + t6 * t16
-    t20 = 1.0 / t7s
 
-    t22 = -t13 + t8 * t18 * t20
-    t23 = t22 * t22
-    t25 = np.exp(-t9)
-    # divisions by u_rot, v_rot safe because clipped, but keep max
-    inv_u = 1.0 / np.maximum(u_rot, eps)
-    inv_v = 1.0 / np.maximum(v_rot, eps)
-    t27 = t25 * inv_u
-    t29 = inv_v
+    L1 = np.log(mt3)
+    L3 = np.log(mt5)
+    logs = np.logaddexp(theta * L1, theta * L3)
+    w1 = np.exp(theta * L1 - logs)
+    w3 = np.exp(theta * L3 - logs)
+    D = w1 * L1 + w3 * L3
+    Dd = w1 * L1 * L1 + w3 * L3 * L3 - D * D  # a variance, so >= 0
 
-    t30 = -1.0 + t8
-    t31 = np.power(t7s, 2.0 * t30)
-    t32 = t29 * t31
-    t33 = t3 * t5
-    t33s = np.maximum(np.abs(t33), eps)
-    t34 = theta - 1.0
-    t35 = np.power(t33s, t34)
-    t36 = np.power(t7s, -t8)
-    t37 = t34 * t36
-    t38 = 1.0 + t37
-    t38s = np.where(np.abs(t38) < eps, np.sign(t38 + 0.0) * eps + (t38 == 0) * eps, t38)
-    t39 = t35 * t38s
-    t40 = t32 * t39
-    t44 = (1.0 / t10) * (1.0 / theta) * t12
-    t47 = t11 * t18 * t20
-    t49 = t14 * t14
-    t51 = t16 * t16
-    t53 = t4 * t49 + t6 * t51
-    t56 = t18 * t18
-    t58 = t7s * t7s
-    t59 = 1.0 / np.maximum(t58, eps)
-    t61 = 2.0 * t44 - 2.0 * t47 + t8 * t53 * t20 - t8 * t56 * t59
-    t65 = t9 * t9
-    t70 = t9 * t22 * t27
-    t74 = -2.0 * t13 + 2.0 * t30 * t18 * t20
-    t75 = t74 * t35
-    t80 = np.log(t33s)
-    t87 = t36 - t37 * t22
-    t88 = t35 * t87
-    t17 = t27 * t29
-    t15 = t74 * t74
-    t2 = t31 * t35
-    t1 = t80 * t80
+    th2 = theta * theta
+    th3 = th2 * theta
+    G = logs / theta
+    Gd = D / theta - logs / th2
+    Gdd = Dd / theta - 2.0 * D / th2 + 2.0 * logs / th3
+    A = np.exp(G)
+    Ad = A * Gd
+    Add = A * (Gd * Gd + Gdd)
 
-    deriv = (
-        -t9 * t23 * t27 * t40
-        - t9 * t61 * t27 * t40
-        + t65 * t23 * t27 * t40
-        - 2.0 * t70 * t32 * t75 * t38s
-        - 2.0 * t70 * t32 * t35 * t80 * t38s
-        - 2.0 * t70 * t32 * t88
-        + t17 * t31 * t15 * t39
-        + t17
-        * t31
-        * (4.0 * t44 - 4.0 * t47 + 2.0 * t30 * t53 * t20 - 2.0 * t30 * t56 * t59)
-        * t39
-        + 2.0 * t27 * t32 * t75 * t80 * t38s
-        + 2.0 * t17 * t31 * t74 * t88
-        + t17 * t2 * t1 * t38s
-        + 2.0 * t17 * t2 * t80 * t87
-        + t17 * t2 * (-2.0 * t36 * t22 + t37 * t23 - t37 * t61)
+    B = A + theta - 1.0
+    B = np.where(np.abs(B) < eps, np.sign(B + 0.0) * eps + (B == 0) * eps, B)
+
+    logc = (
+        -A
+        + np.log(np.abs(B))
+        + (1.0 / theta - 2.0) * logs
+        + (theta - 1.0) * (L1 + L3)
+        - t3
+        - t5
     )
+    l1 = -Ad + (Ad + 1.0) / B - logs / th2 + (1.0 / theta - 2.0) * D + L1 + L3
+    l2 = (
+        -Add
+        + Add / B
+        - (Ad + 1.0) ** 2 / (B * B)
+        - 2.0 * D / th2
+        + 2.0 * logs / th3
+        + (1.0 / theta - 2.0) * Dd
+    )
+
+    deriv = np.exp(logc) * (l1 * l1 + l2)
     # if anything still went non-finite, neutralize those entries
     deriv = np.where(np.isfinite(deriv), deriv, 0.0)
 
