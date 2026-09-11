@@ -1070,7 +1070,7 @@ class MultivariateOnlineDistributionalRegressionPath(
 
                             if not np.any(sel):
                                 weights = (
-                                    (1 + theta[a][p] ** 2) / (1 - theta[a][p] ** 2) ** 2
+                                    _expected_information(self.distribution, theta[a][p])
                                 ).squeeze()
                                 weights = (
                                     dl1_link
@@ -1924,7 +1924,7 @@ class MultivariateOnlineDistributionalRegressionPath(
                             # Handle scalar case
                             if not sel or weights <= 0 or np.isnan(weights):
                                 weights = (
-                                    (1 + theta[a][p] ** 2) / (1 - theta[a][p] ** 2) ** 2
+                                    _expected_information(self.distribution, theta[a][p])
                                 ).squeeze()
                                 weights = (
                                     dl1_link
@@ -1936,7 +1936,7 @@ class MultivariateOnlineDistributionalRegressionPath(
                             # Handle array case
                             if not np.any(sel):
                                 weights = (
-                                    (1 + theta[a][p] ** 2) / (1 - theta[a][p] ** 2) ** 2
+                                    _expected_information(self.distribution, theta[a][p])
                                 ).squeeze()
                                 weights = (
                                     dl1_link
@@ -2348,3 +2348,78 @@ class MultivariateOnlineDistributionalRegressionPath(
         self.theta_ = theta
         self.optimal_theta_ = self.theta_[self.optimal_adr_]
         self.last_fit_adr_max_ = self.optimal_adr_
+
+
+# Expected (Fisher) information of the native copula parameter, used as the
+# working weight when the observed information is non-positive. Mirrors
+# gamCopula's FisherBiCop, which dispatches on the family; the Gaussian form
+# alone is wrong for Gumbel/Clayton, whose parameters cross |theta| = 1.
+# Gaussian: elementary. Gumbel: Schepsmeier & Stober (2012). Clayton: Oakes (1982).
+_FISHER_K0 = 5.0 / 6.0 - np.pi**2 / 18.0
+
+
+def _e1_scaled(x):
+    """E1(x) * exp(x); asymptotic branch for large x, where the two factors
+    computed separately give 0 * inf = nan."""
+    from scipy.special import exp1
+
+    x = np.asarray(x, dtype=float)
+    out = np.empty_like(x)
+    lo = x <= 20.0
+    if np.any(lo):
+        out[lo] = exp1(x[lo]) * np.exp(x[lo])
+    hi = ~lo
+    if np.any(hi):
+        z = 1.0 / x[hi]
+        out[hi] = z * (1.0 - z * (1.0 - z * (2.0 - z * (6.0 - z * 24.0))))
+    return out
+
+
+def _expected_information(distribution, theta):
+    """I(theta) for the family of `distribution`; Gaussian expression for any
+    family without a closed form here (e.g. Student-t), as before."""
+    from scipy.special import polygamma
+
+    name = type(distribution).__name__
+    th = np.asarray(theta, dtype=float)
+    absth = np.abs(th)
+
+    if "Gumbel" in name:
+        t = np.clip(absth, 1.0 + 1e-10, 1e8)
+        info = (1.0 / t**4) * (
+            t**2 * (-2.0 / 3.0 + np.pi**2 / 9.0)
+            - t
+            + 2.0 * _FISHER_K0 / t
+            + (
+                t**3
+                + t**2
+                + (_FISHER_K0 - 1.0) * t
+                - 2.0 * _FISHER_K0
+                + _FISHER_K0 / t
+            )
+            * _e1_scaled(t - 1.0)
+        )
+    elif "Clayton" in name:
+        t = np.clip(absth, 1e-10, 1e8)
+        pp_ = t + 1.0
+        d = 2.0 * (pp_ - 1.0)
+        v1 = polygamma(1, 1.0 / d)
+        v2 = polygamma(1, pp_ / d)
+        v3 = polygamma(1, (2.0 * pp_ - 1.0) / d)
+        qq = (
+            1.0
+            / ((3.0 * pp_ - 2.0) * (2.0 * pp_ - 1.0))
+            * (1.0 + pp_ / d * (v1 - v2) + 1.0 / d * (v2 - v3))
+        )
+        info = (
+            1.0 / pp_**2
+            + 2.0 / (pp_ * (pp_ - 1.0) * (2.0 * pp_ - 1.0))
+            + 4.0 * pp_ / (3.0 * pp_ - 2.0)
+            - 2.0 * (2.0 * pp_ - 1.0) * qq / (pp_ - 1.0)
+        )
+    else:  # Gaussian and anything else
+        r = np.clip(absth, 0.0, 1.0 - 1e-10)
+        info = (1.0 + r**2) / (1.0 - r**2) ** 2
+
+    # the IRLS step needs a strictly positive weight
+    return np.where(np.isfinite(info) & (info > 0.0), info, 1e-10)
