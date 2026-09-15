@@ -4,7 +4,6 @@
 [![License](https://img.shields.io/github/license/simon-hirsch/rolch)](https://opensource.org/license/gpl-3-0)
 ![GitHub Release](https://img.shields.io/github/v/release/simon-hirsch/ondil?display_name=release&label=Release)
 [![Downloads](https://static.pepy.tech/badge/ondil)](https://pepy.tech/project/ondil)
-[![Tests](https://github.com/simon-hirsch/ondil/actions/workflows/ci_run_tests.yml/badge.svg?branch=main)](https://github.com/simon-hirsch/ondil/actions/workflows/ci_run_tests.yml)
 [![Docs](https://github.com/simon-hirsch/ondil/actions/workflows/ci_build_docs.yml/badge.svg?branch=main)](https://github.com/simon-hirsch/ondil/actions/workflows/ci_build_docs.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/simon-hirsch/ondil/badge)](https://www.codefactor.io/repository/github/simon-hirsch/ondil)
 
@@ -40,6 +39,7 @@ This allows us to specify very flexible models that consider the conditional beh
 - 🚀 Fast and efficient implementation using [`numba`](https://numba.pydata.org/) for just-in-time compilation.
 - 🚀 Full compatibility with [`scikit-learn`](https://scikit-learn.org/stable/) estimators and transformers.
 - 🚀 Directly score distributional forecasts using the CRPS from [`scoringrules`](https://github.com/frazane/scoringrules) (optional dependency) - either via fine-grid quantile approximation or closed-form solutions.
+- 🚀 Online pre-processing using incremental scaling and pipeline support.
 
 ## Example
 
@@ -139,3 +139,13 @@ If you use `ondil` in your research, please cite the following paper(s), dependi
   year={2025}
 }
 ```
+
+## Automation
+
+| Task | State |
+|------|-------|
+| Tests (OS) | [![Tests](https://github.com/simon-hirsch/ondil/actions/workflows/ci_run_tests_os.yml/badge.svg?branch=main)](https://github.com/simon-hirsch/ondil/actions/workflows/ci_run_tests_os.yml) |
+| Tests (Dependencys) | [![Tests](https://github.com/simon-hirsch/ondil/actions/workflows/ci_run_tests_deps.yml/badge.svg?branch=main)](https://github.com/simon-hirsch/ondil/actions/workflows/ci_run_tests_deps.yml) |
+| Build Docs | [![Docs](https://github.com/simon-hirsch/ondil/actions/workflows/ci_build_docs.yml/badge.svg?branch=main)](https://github.com/simon-hirsch/ondil/actions/workflows/ci_build_docs.yml) |
+
+
